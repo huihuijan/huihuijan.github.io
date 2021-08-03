@@ -285,7 +285,7 @@ Code.executeBlockCode = function() {
         interpreter.createNativeFunction(promptWrapper));
   };
   var myInterpreter = new Interpreter(code, initFunc);
-  var stepsAllowed = 10000;
+  var stepsAllowed = 1000000;
   while (myInterpreter.step() && stepsAllowed) {
     stepsAllowed--;
   }
