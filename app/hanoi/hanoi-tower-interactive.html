@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>河內塔遊戲</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .towers-area {
+            display: flex;
+            justify-content: space-around;
+            height: 250px;
+            position: relative;
+            margin-top: 20px;
+            border: 1px solid #eee;
+            background-color: #f9f9f9;
+        }
+        
+        .tower {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 33%;
+            position: relative;
+        }
+        
+        .rod {
+            width: 20px;
+            height: 180px;
+            background-color: brown;
+            position: absolute;
+            bottom: 20px;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .base {
+            width: 120px;
+            height: 20px;
+            background-color: #8B4513;
+            position: absolute;
+            bottom: 0;
+            border-radius: 5px;
+        }
+        
+        .tower-label {
+            position: absolute;
+            bottom: -25px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .discs-container {
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+            width: 100%;
+            height: 180px;
+            position: absolute;
+            bottom: 20px;
+            z-index: 10;
+        }
+        
+        .disc {
+            height: 20px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-family: monospace;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #f0f0f0;
+            border-left: 4px solid #666;
+        }
+        
+        /* 移動中的圓盤 */
+        .moving-disc {
+            position: absolute;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <h1>河內塔互動遊戲</h1>
+    
+    <div class="game-container">
+        <div class="controls">
+            <label for="disc-count">圓盤數量：</label>
+            <input type="number" id="disc-count" min="1" max="8" value="3">
+            <button id="reset-btn">重置遊戲</button>
+            
+            <div style="margin-left: 20px;">
+                <label for="speed">動畫速度：</label>
+                <select id="speed">
+                    <option value="1000">慢</option>
+                    <option value="500" selected>中</option>
+                    <option value="200">快</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="towers-area" id="towers-area">
+            <div class="tower" id="tower-A">
+                <div class="rod"></div>
+                <div class="base"></div>
+                <div class="tower-label">A</div>
+                <div class="discs-container" id="discs-A"></div>
+            </div>
+            
+            <div class="tower" id="tower-B">
+                <div class="rod"></div>
+                <div class="base"></div>
+                <div class="tower-label">B</div>
+                <div class="discs-container" id="discs-B"></div>
+            </div>
+            
+            <div class="tower" id="tower-C">
+                <div class="rod"></div>
+                <div class="base"></div>
+                <div class="tower-label">C</div>
+                <div class="discs-container" id="discs-C"></div>
+            </div>
+        </div>
+        
+        <div>
+            <label for="commands">搬移命令（每行一個命令，格式：move disc [n] from [X] to [Y]）</label>
+            <textarea id="commands" placeholder="例如：
+move disc 1 from A to C
+move disc 2 from A to B
+move disc 1 from C to B"></textarea>
+            <button id="start-btn">開始</button>
+        </div>
+        
+        <div class="status" id="status">
+            準備就緒，請設定圓盤數量並輸入搬移命令。
+        </div>
+    </div>
+
+    <script>
+        // 遊戲狀態
+        const game = {
+            towers: {
+                'A': [],
+                'B': [],
+                'C': []
+            },
+            discCount: 3,
+            isAnimating: false,
+            commands: [],
+            speed: 500
+        };
+
+        // DOM 元素
+        const discCountInput = document.getElementById('disc-count');
+        const resetBtn = document.getElementById('reset-btn');
+        const commandsTextarea = document.getElementById('commands');
+        const startBtn = document.getElementById('start-btn');
+        const statusDisplay = document.getElementById('status');
+        const speedSelect = document.getElementById('speed');
+        const towersArea = document.getElementById('towers-area');
+
+        // 初始化遊戲
+        function initGame() {
+            // 清空塔
+            game.towers = { 'A': [], 'B': [], 'C': [] };
+            
+            // 設定圓盤數量
+            game.discCount = parseInt(discCountInput.value);
+            
+            // 重置所有塔的顯示
+            for (const tower of ['A', 'B', 'C']) {
+                document.getElementById(`discs-${tower}`).innerHTML = '';
+            }
+            
+            // 初始放置圓盤在 A 塔
+            for (let i = game.discCount; i >= 1; i--) {
+                game.towers['A'].push(i);
+            }
+            
+            // 繪製圓盤
+            renderDiscs();
+            
+            game.isAnimating = false;
+            startBtn.disabled = false;
+            
+            statusDisplay.textContent = '遊戲已重置，請輸入搬移命令。';
+        }
+        
+        // 繪製圓盤
+        function renderDiscs() {
+            // 清空所有塔的顯示
+            for (const tower of ['A', 'B', 'C']) {
+                document.getElementById(`discs-${tower}`).innerHTML = '';
+            }
+            
+            // 繪製每個塔上的圓盤
+            for (const tower of ['A', 'B', 'C']) {
+                const discsContainer = document.getElementById(`discs-${tower}`);
+                
+                game.towers[tower].forEach(discNum => {
+                    const disc = document.createElement('div');
+                    disc.className = 'disc';
+                    disc.dataset.discNumber = discNum;
+                    
+                    // 設定圓盤寬度 (最大120px，最小40px)
+                    const width = 40 + (discNum - 1) * (80 / game.discCount);
+                    disc.style.width = `${width}px`;
+                    
+                    // 設定圓盤顏色
+                    const hue = (discNum - 1) * (360 / game.discCount);
+                    disc.style.backgroundColor = `hsl(${hue}, 70%, 50%)`;
+                    
+                    // 顯示圓盤編號
+                    disc.textContent = discNum;
+                    
+                    discsContainer.appendChild(disc);
+                });
+            }
+        }
+        
+        // 解析命令
+        function parseCommands() {
+            const commandsText = commandsTextarea.value.trim();
+            if (!commandsText) {
+                statusDisplay.textContent = '請輸入搬移命令。';
+                return false;
+            }
+            
+            const commandLines = commandsText.split('\n');
+            const parsedCommands = [];
+            
+            for (let i = 0; i < commandLines.length; i++) {
+                const line = commandLines[i].trim();
+                if (!line) continue;
+                
+                // 使用正則表達式解析命令
+                const cmdMatch = line.match(/move disc (\d+) from ([A-C]) to ([A-C])/i);
+                
+                if (!cmdMatch) {
+                    statusDisplay.textContent = `第 ${i+1} 行命令格式錯誤：${line}`;
+                    return false;
+                }
+                
+                const discNum = parseInt(cmdMatch[1]);
+                const fromTower = cmdMatch[2].toUpperCase();
+                const toTower = cmdMatch[3].toUpperCase();
+                
+                // 檢查圓盤編號是否有效
+                if (discNum < 1 || discNum > game.discCount) {
+                    statusDisplay.textContent = `第 ${i+1} 行命令錯誤：圓盤 ${discNum} 不存在。`;
+                    return false;
+                }
+                
+                parsedCommands.push({
+                    line: i + 1,
+                    discNum,
+                    fromTower,
+                    toTower
+                });
+            }
+            
+            game.commands = parsedCommands;
+            return true;
+        }
+        
+        // 動畫移動圓盤
+function animateMoveDisc(discNum, fromTower, toTower) {
+    return new Promise((resolve) => {
+        // 獲取速度設定
+        const speed = parseInt(speedSelect.value);
+        
+        // 獲取來源和目標塔的位置
+        const fromTowerEl = document.getElementById(`tower-${fromTower}`);
+        const toTowerEl = document.getElementById(`tower-${toTower}`);
+        const fromRect = fromTowerEl.getBoundingClientRect();
+        const toRect = toTowerEl.getBoundingClientRect();
+        
+        // 獲取要移動的圓盤
+        const fromDiscsContainer = document.getElementById(`discs-${fromTower}`);
+        const discElement = fromDiscsContainer.querySelector(`[data-disc-number="${discNum}"]`);
+        
+        if (!discElement) {
+            console.error('找不到要移動的圓盤');
+            resolve();
+            return;
+        }
+        
+        // 創建移動用的克隆圓盤
+        const discClone = discElement.cloneNode(true);
+        discClone.classList.add('moving-disc');
+        
+        // 獲取圓盤當前位置
+        const discRect = discElement.getBoundingClientRect();
+        const areaRect = towersArea.getBoundingClientRect();
+        
+        // 設置克隆圓盤的初始位置
+        discClone.style.position = 'absolute';
+        discClone.style.left = `${discRect.left - areaRect.left}px`;
+        discClone.style.top = `${discRect.top - areaRect.top}px`;
+        discClone.style.width = `${discRect.width}px`;
+        
+        // 添加到遊戲區域
+        towersArea.appendChild(discClone);
+        
+        // 隱藏原始圓盤
+        discElement.style.visibility = 'hidden';
+        
+        // 計算移動位置
+        const fromTowerCenterX = fromRect.left + fromRect.width / 2 - areaRect.left;
+        const toTowerCenterX = toRect.left + toRect.width / 2 - areaRect.left;
+        const targetDiscCount = game.towers[toTower].length;
+        
+        // 強制重繪並添加transition屬性
+        setTimeout(() => {
+            // 強制瀏覽器重新計算樣式
+            window.getComputedStyle(discClone).getPropertyValue('top');
+            
+            // 設置transition屬性
+            discClone.style.transition = `all ${speed/1000}s ease`;
+            
+            // 步驟1：上移動畫
+            setTimeout(() => {
+                discClone.style.top = '20px';
+                
+                // 步驟2：橫移動畫
+                setTimeout(() => {
+                    discClone.style.left = `${toTowerCenterX - discRect.width / 2}px`;
+                    
+                    // 步驟3：下移動畫
+                    setTimeout(() => {
+                        const targetY = 180 - targetDiscCount * 25; // 目標高度，從底部向上算
+                        discClone.style.top = `${targetY}px`;
+                        
+                        // 動畫完成後，更新狀態並移除克隆元素
+                        setTimeout(() => {
+                            // 更新遊戲狀態
+                            const disc = game.towers[fromTower].pop();
+                            game.towers[toTower].push(disc);
+                            
+                            // 重新渲染所有圓盤
+                            renderDiscs();
+                            
+                            // 移除克隆元素
+                            discClone.remove();
+                            
+                            resolve();
+                        }, speed);
+                        
+                    }, speed);
+                    
+                }, speed);
+                
+            }, 10);
+        }, 10); // 短暫延遲，確保DOM已更新
+    });
+}
+        
+// 检查命令是否合法
+function isValidMove(discNum, fromTower, toTower, lineNumber) {
+    // 检查来源塔是否有圆盘
+    if (game.towers[fromTower].length === 0) {
+        statusDisplay.textContent = `错误：第 ${lineNumber} 行 - 塔 ${fromTower} 上没有圆盘`;
+        return false;
+    }
+    
+    // 检查最上面的圆盘是否是指定的圆盘
+    if (game.towers[fromTower][game.towers[fromTower].length - 1] !== discNum) {
+        statusDisplay.textContent = `错误：第 ${lineNumber} 行 - 塔 ${fromTower} 上的最上面圆盘不是 ${discNum}`;
+        return false;
+    }
+    
+    // 检查目标塔的最上面圆盘是否比要移动的圆盘大
+    if (game.towers[toTower].length > 0 && 
+        game.towers[toTower][game.towers[toTower].length - 1] < discNum) {
+        statusDisplay.textContent = `错误：第 ${lineNumber} 行 - 不能将较大的圆盘 ${discNum} 放在较小的圆盘 ${game.towers[toTower][game.towers[toTower].length - 1]} 上`;
+        return false;
+    }
+    
+    return true;
+}
+        
+// 执行命令序列
+async function executeCommands() {
+    if (game.isAnimating) return;
+    
+    if (!parseCommands()) return;
+    
+    // 重置游戏
+    initGame();
+    game.isAnimating = true;
+    startBtn.disabled = true;
+    
+    let success = true;
+    
+    // 依次执行每条命令
+    for (const cmd of game.commands) {
+        statusDisplay.textContent = `执行命令：move disc ${cmd.discNum} from ${cmd.fromTower} to ${cmd.toTower}`;
+        
+        // 检查命令是否合法，传入行号
+        if (!isValidMove(cmd.discNum, cmd.fromTower, cmd.toTower, cmd.line)) {
+            success = false;
+            break;
+        }
+        
+        // 执行移动动画
+        await animateMoveDisc(cmd.discNum, cmd.fromTower, cmd.toTower);
+    }
+    
+    if (success) {
+        if (game.towers['C'].length === game.discCount) {
+            statusDisplay.textContent = '恭喜！你成功地解决了河内塔谜题！';
+        } else {
+            statusDisplay.textContent = '命令序列已执行完毕。';
+        }
+    }
+    
+    game.isAnimating = false;
+    startBtn.disabled = false;
+}
+        
+        // 自動產生解決方案
+        function generateSolution() {
+            const n = parseInt(discCountInput.value);
+            const solution = [];
+            
+            function hanoi(n, source, target, auxiliary) {
+                if (n > 0) {
+                    hanoi(n - 1, source, auxiliary, target);
+                    solution.push(`move disc ${n} from ${source} to ${target}`);
+                    hanoi(n - 1, auxiliary, target, source);
+                }
+            }
+            
+            hanoi(n, 'A', 'C', 'B');
+            return solution.join('\n');
+        }
+        
+        // 事件監聽器
+        resetBtn.addEventListener('click', initGame);
+        startBtn.addEventListener('click', executeCommands);
+        discCountInput.addEventListener('change', initGame);
+        
+        // 添加雙擊命令輸入框自動產生解決方案
+        commandsTextarea.addEventListener('dblclick', function() {
+            if (confirm('是否要自動產生河內塔解決方案？')) {
+                commandsTextarea.value = generateSolution();
+            }
+        });
+        
+        // 初始化遊戲
+        initGame();
+    </script>
+</body>
+</html>
